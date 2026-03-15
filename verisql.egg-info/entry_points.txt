@@ -1,2 +1,0 @@
-[console_scripts]
-verisql = verisql.main:main

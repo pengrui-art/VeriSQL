@@ -1,1 +1,21 @@
 verisql/DataBase/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+
+# Environments
+.env
+.venv/
+venv/
+env/
+
+# IDEs
+.idea/
+.vscode/
+
+# Local databases and artifacts
+*.sqlite
