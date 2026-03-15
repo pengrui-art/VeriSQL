@@ -1,0 +1,11 @@
+{
+  "metrics": {
+    "total": 5,
+    "ex_rate": 0.0,
+    "svr": 0.0,
+    "caa": 0.0,
+    "avg_latency": 55.362840795516966,
+    "pred_source": "agent",
+    "data": "verisql\\DataBase\\Bird\\dev_20240627\\dev_tied_append.json"
+  }
+}

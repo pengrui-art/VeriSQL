@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: verisql
+Version: 0.1.0
+Summary: Neuro-Symbolic Runtime Verification for Database Analysis Agents
+Author: VeriSQL Team
+Requires-Python: >=3.10
+Requires-Dist: langgraph>=0.1.0
+Requires-Dist: langchain>=0.2.0
+Requires-Dist: langchain-openai>=0.1.0
+Requires-Dist: z3-solver>=4.12.0
+Requires-Dist: sqlglot>=20.0.0
+Requires-Dist: openai>=1.0.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: python-dotenv>=1.0.0
+Dynamic: author
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary

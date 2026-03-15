@@ -1,0 +1,12 @@
+{
+  "metrics": {
+    "total": 1,
+    "ex_rate": 1.0,
+    "svr": 0.0,
+    "caa": 0.0,
+    "avg_latency": 0.01693582534790039,
+    "pred_source": "gold",
+    "data": "verisql\\DataBase\\Bird\\dev_20240627\\dev_tied_append.json",
+    "output": "paper_data\\runs\\bird_results.jsonl"
+  }
+}

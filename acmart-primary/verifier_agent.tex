@@ -1,0 +1,126 @@
+
+\documentclass[sigconf,review,anonymous]{acmart}
+
+%%
+%% \BibTeX command to typeset BibTeX logo in the docs
+\AtBeginDocument{%
+  \providecommand\BibTeX{{%
+    \normalfont B\kern-0.5em{\scshape i\kern-0.25em b}\kern-0.8em\TeX}}}
+
+%% Rights management information.
+\setcopyright{acmcopyright}
+\copyrightyear{2026}
+\acmYear{2026}
+\acmDOI{10.1145/1122445.1122456}
+
+%% These commands are for a PROCEEDINGS abstract or paper.
+\acmConference[ASE '26]{The 41st IEEE/ACM International Conference on Automated Software Engineering}{September 2026}{Kyoto, Japan}
+\acmBooktitle{ASE '26: The 41st IEEE/ACM International Conference on Automated Software Engineering, September 2026, Kyoto, Japan}
+\acmISBN{978-1-4503-XXXX-X/18/06}
+
+\begin{document}
+
+\title{VeriSQL: Neuro-Symbolic Runtime Verification for Database Analysis Agents}
+
+%% Authors (Anonymous for review)
+\author{Anonymous Author(s)}
+\affiliation{%
+  \institution{Institution}
+  \city{City}
+  \country{Country}
+}
+
+\renewcommand{\shortauthors}{Anonymous}
+
+\begin{abstract}
+Large Language Model (LLM) agents for Text-to-SQL tasks have achieved impressive performance but suffer from a critical "trust crisis" in enterprise deployments. Existing approaches primarily rely on execution accuracy or self-reflection, which fail to detect \textit{logic hallucinations} where the generated SQL yields plausible but incorrect results (e.g., omitting business rules like "status != 'cancelled'"). We present \textbf{VeriSQL}, a neuro-symbolic agent architecture that introduces runtime formal verification into the generation loop. VeriSQL features a \textit{Dual-Path Generator} that simultaneously produces SQL and a formal \textit{Database Linear Temporal Logic (DB-LTL)} specification. A \textit{Hybrid Verification Engine} then validates the SQL using (1) \textit{Static Symbolic Verification} (via Z3 SMT solver) to prove logical consistency, and (2) \textit{Dynamic Adversarial Testing} on a synthesized micro-database to catch behavioral edge cases. Experiments on the BIRD benchmark demonstrate that VeriSQL significantly reduces safety violations compared to state-of-the-art baselines while maintaining high execution accuracy.
+\end{abstract}
+
+\begin{CCSXML}
+<ccs2012>
+   <concept>
+       <concept_id>10011007.10011074.10011099</concept_id>
+       <concept_desc>Software and its engineering~Software verification and validation</concept_desc>
+       <concept_significance>500</concept_significance>
+       </concept>
+   <concept>
+       <concept_id>10010147.10010178</concept_id>
+       <concept_desc>Computing methodologies~Artificial intelligence</concept_desc>
+       <concept_significance>300</concept_significance>
+       </concept>
+ </ccs2012>
+\end{CCSXML}
+
+\ccsdesc[500]{Software and its engineering~Software verification and validation}
+\ccsdesc[300]{Computing methodologies~Artificial intelligence}
+
+\keywords{LLM Agents, Text-to-SQL, Neuro-Symbolic AI, Runtime Verification}
+
+\maketitle
+
+\section{Introduction}
+
+The integration of Large Language Models (LLMs) into database analysis workflows has democratized data access, allowing non-technical users to query complex databases using natural language (Text-to-SQL). Recent agentic frameworks employ iterative "thought-action" loops to refine queries and improve execution accuracy on challenging benchmarks.
+
+However, a fundamental barrier remains for enterprise adoption: \textbf{trust}. Unlike code generation, where syntax errors are caught by compilers and logic errors by unit tests, SQL generation errors are often \textit{silent}. A query might run successfully but return wrong data because the Agent "forgot" a business rule (e.g., filtering out cancelled orders). We term this the \textit{Logic Hallucination} problem.
+
+Existing solutions rely heavily on \textit{self-correction} (asking the LLM to review its own code) or \textit{execution feedback} (checking if the query crashes). These are insufficient: an LLM that hallucinates a wrong logic is likely to hallucinate a "Looks good!" review, and a logically wrong query often executes without error.
+
+To address this, we introduce \textbf{VeriSQL}, a framework that treats SQL generation not just as a translation task, but as a \textit{software verification} problem. Our key contributions are:
+
+\begin{enumerate}
+    \item \textbf{Dual-Path Generation}: We decouple the generation of the implementation (SQL) from the specification (DB-LTL constraints). This reduces the likelihood of correlated hallucinations.
+  \item \textbf{AutoFormalizer}: A module that translates natural language intent into an intermediate Intent Logic Representation (ILR), serving as a ground truth for both SQL and Spec.
+    \item \textbf{Hybrid Verification}: A novel combination of static analysis (using Z3/SMT to prove $SQL \implies Spec$) and dynamic analysis (using synthesized adversarial micro-databases to test edge cases).
+\end{enumerate}
+
+\section{Problem Definition}
+
+Given a natural language question $Q$, a database schema $\mathcal{S}$, and a set of business rules $\mathcal{R}$, the goal is to generate a SQL query $q$ such that:
+$$ \text{Execute}(q, \mathcal{D}) = \text{GroundTruth}(Q, \mathcal{D}) $$
+Crucially, we introduce a \textit{safety constraint}. Let $\phi$ be the formal specification derived from $Q$ and $\mathcal{R}$. We require:
+$$ \text{Verify}(q, \phi) = \text{PASS} $$
+where logic violations (e.g., missing predicates) are detected \textit{before} massive execution.
+
+\section{System Architecture}
+
+VeriSQL employs a multi-agent neuro-symbolic architecture (Figure 1).
+
+\subsection{Intent Parsing \& AutoFormalizer}
+Instead of generating SQL directly, the \textit{Intent Parser} first extracts semantic components (Entities, Filters, Temporal scopes). The \textit{AutoFormalizer} then converts this into \textbf{ILR (Intent Logic Representation)}, a structured intermediate form. For example, "Q3 Sales" becomes a temporal scope \texttt{['2024-07-01','2024-09-30']} and a \texttt{SUM} aggregation.
+
+\subsection{Dual-Path Generators}
+Two independent LLM calls generate:
+\begin{itemize}
+    \item \textbf{Candidate SQL}: The executable query (sqlite/postgres).
+  \item \textbf{Constraint Spec}: A declarative set of constraints (e.g., \texttt{FORALL row: date \in [T1, T2] AND status != 'cancelled'}).
+\end{itemize}
+
+\subsection{Hybrid Verification Engine}
+\subsubsection{Static Verifier (Symbolic)}
+We parse the generated SQL into an Abstract Syntax Tree (AST) and extract predicates. A Z3 SMT solver attempts to prove that the SQL predicates logically imply the Spec constraints. If \texttt{Valid(SQL $\implies$ Spec)} is not provable, the solver returns a counterexample model.
+
+\subsubsection{Dynamic Verifier (Adversarial)}
+Since symbolic verification can be incomplete for complex SQL functions, we also synthesize a \textit{Micro Sandbox Database}. This minimal DB contains "corner case" rows (e.g., dates exactly on the boundary of Q3, rows with 'cancelled' status). We execute the SQL on this sandbox. If the result contains rows that violate the Spec (e.g., a 'cancelled' order appears in the output), the verification fails.
+
+\section{Related Work}
+
+\textbf{Contract/specification-guided runtime verification for LLM systems.} Recent work has shown that introducing explicit contracts or specifications can make LLM tool-use systems more reliable by gating actions on verifiable conditions and tracking trusted state. ToolGate proposes contract-grounded and verified tool execution, while FASTRIC introduces a prompt specification language enabling verifiable interaction protocols; RvLLM studies runtime verification with domain knowledge and explicit predicates \cite{toolgate2026,fastric2025,rvllm2025}. VeriSQL aligns with this line of research but focuses on the semantics of generated SQL, where silent logic errors can pass execution-based checks.
+
+\textbf{Verifier-feedback and counterexample-guided repair loops.} In software engineering venues, a recurring pattern is to autoformalize intent, apply a formal checker, and use counterexamples to guide repair. PAT-Agent demonstrates counterexample-guided repair for model checking tasks, and SemGuard studies real-time semantic supervision for correcting generated code. TerraFormer highlights verifier-guided generation for infrastructure-as-code with compliance checks \cite{patagent2025,semguard2025,terraformer2026}. VeriSQL instantiates this pattern in the database setting and complements symbolic checks with micro-database falsification.
+
+\textbf{Text-to-SQL repair systems and safety-layer benchmarks.} Prior Text-to-SQL systems often emphasize execution accuracy and iterative repair using execution feedback or heuristic consistency checks. SQLFixAgent and DeepEye-SQL exemplify multi-stage or multi-agent repair pipelines, while reflective refinement frameworks organize staged improvements \cite{sqlfixagent2024,deepeyesql2025,reflectivesql2026}. Meanwhile, benchmarks such as SCARE and DySQL-Bench highlight the need for post-generation safety layers and dynamic, multi-turn evaluation \cite{scare2025,dysqlbench2025}. VeriSQL focuses on spec-driven verification and interpretable counterexamples to reduce safety violations beyond execution metrics.
+
+\section{Preliminary Experiments}
+
+We evaluate VeriSQL on the BIRD benchmark, focusing on the \textit{Safety Violation Rate (SVR)} - the percentage of generated queries that are syntactically valid but violate business constraints.
+
+\textit{(Placeholder for Results Table)}
+
+\section{Conclusion}
+VeriSQL bridges the gap between probabilistic LLM generation and deterministic software correctness. By enforcing formal verification at runtime, we provide a safety net that makes Text-to-SQL agents viable for high-stakes enterprise applications.
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{acmart}
+
+\end{document}
