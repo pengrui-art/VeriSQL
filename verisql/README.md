@@ -241,8 +241,6 @@ python verisql/eval_bird.py --dev path/to/dev.json --db-root path/to/dev_databas
 | `test_dynamic_verifier.py` | Unit tests for `MockDBGenerator` and `DynamicVerifier` pipeline |
 | `test_fault_localizer.py` | Unit tests for `FaultLocalizer` fault localisation and `PatchAction` generation |
 | `test_agent_robustness.py` | Integration tests for end-to-end agent robustness under adversarial inputs |
-| `test.py` | Ad-hoc / smoke tests for quick manual verification |
-
 ---
 
 ## 🚀 Quick Start

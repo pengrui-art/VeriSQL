@@ -76,9 +76,10 @@ is the canonical execution checklist going forward.
   - `cli.py`
   - `test_agent_robustness.py`
   - any remaining local-only defaults
-- [ ] Repair broken helper scripts.
-  - `run_baseline.py` currently references a missing `test_api.py`.
-  - baseline orchestration should be renamed or fixed.
+- [ ] Add one clean experiment orchestration entry point.
+  - the old root-level helper scripts have been removed
+  - keep the canonical workflow under `python -m verisql.*`
+  - add a reproducible wrapper only after the pipeline semantics are stable
 - [ ] Add a reproducible environment spec.
   - `environment.yml` or equivalent
   - make sure `pytest` is included
