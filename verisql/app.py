@@ -31,6 +31,12 @@ from verisql.config import SQL_MODEL, SPEC_MODEL, LLM_PROVIDER, get_llm_config
 from verisql.utils.z3_utils import verify_sql_against_spec
 from verisql.utils.spec_utils import parse_spec_safely
 from verisql.utils.diagnosis import diagnose_sql_error, check_result_quality
+from verisql.utils.sql_safety import validate_read_only_sql
+
+
+def _quote_sqlite_ident(name: str) -> str:
+    escaped = name.replace('"', '""')
+    return f'"{escaped}"'
 
 
 # ============== Database Utils ==============
@@ -68,7 +74,7 @@ class DatabaseManager:
                 if table_name.startswith('sqlite_'):
                     continue
                     
-                cursor.execute(f"PRAGMA table_info({table_name})")
+                cursor.execute(f"PRAGMA table_info({_quote_sqlite_ident(table_name)})")
                 columns = cursor.fetchall()
                 
                 col_info = []
@@ -129,18 +135,18 @@ class DatabaseManager:
         """Execute SQL and return results"""
         if not self.conn:
             return False, "No database loaded", []
+
+        is_safe, safety_error = validate_read_only_sql(sql)
+        if not is_safe:
+            return False, safety_error, {}
         
         try:
             cursor = self.conn.cursor()
             cursor.execute(sql)
             
-            if sql.strip().upper().startswith("SELECT"):
-                columns = [desc[0] for desc in cursor.description]
-                rows = cursor.fetchall()
-                return True, "Query executed successfully", {"columns": columns, "rows": rows}
-            else:
-                self.conn.commit()
-                return True, f"Affected rows: {cursor.rowcount}", {}
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            return True, "Query executed successfully", {"columns": columns, "rows": rows}
                 
         except Exception as e:
             return False, f"SQL Error: {str(e)}", {}

@@ -51,6 +51,8 @@ from verisql.config import (
     LLM_PROVIDER,
     LLM_STREAMING,
 )
+from verisql.utils.sql_safety import validate_read_only_sql
+from verisql.utils.llm_usage import merge_usage_summaries, make_usage_event
 
 
 def create_llm(model: str, temperature: float = 0) -> ChatOpenAI:
@@ -399,12 +401,25 @@ def intent_parser_node(state: VeriSQLState) -> Dict[str, Any]:
         response = chain.invoke(
             {"query": state["query"], "schema_info": state.get("schema_info", {})}
         )
+        llm_usage = merge_usage_summaries(
+            state.get("llm_usage"),
+            make_usage_event(
+                response,
+                stage="intent_parser",
+                model=SQL_MODEL,
+                provider=LLM_PROVIDER,
+            ),
+        )
 
         parsed_intent = parse_json_from_markdown(response.content)
 
         # Store parsed intent for next stage
         # (We pass it through to auto_formalizer)
-        return {"parsed_intent": parsed_intent, "errors": state.get("errors", [])}
+        return {
+            "parsed_intent": parsed_intent,
+            "llm_usage": llm_usage,
+            "errors": state.get("errors", []),
+        }
     except Exception as e:
         return {
             "errors": state.get("errors", []) + [f"Intent parsing failed: {str(e)}"]
@@ -425,6 +440,15 @@ def auto_formalizer_node(state: VeriSQLState) -> Dict[str, Any]:
         response = chain.invoke(
             {"parsed_intent": state.get("parsed_intent", {}), "query": state["query"]}
         )
+        llm_usage = merge_usage_summaries(
+            state.get("llm_usage"),
+            make_usage_event(
+                response,
+                stage="auto_formalizer",
+                model=SPEC_MODEL,
+                provider=LLM_PROVIDER,
+            ),
+        )
 
         ilr_dict = parse_json_from_markdown(response.content)
 
@@ -441,7 +465,7 @@ def auto_formalizer_node(state: VeriSQLState) -> Dict[str, Any]:
             )
             raise validation_err
 
-        return {"ilr": ilr, "errors": state.get("errors", [])}
+        return {"ilr": ilr, "llm_usage": llm_usage, "errors": state.get("errors", [])}
     except Exception as e:
         return {
             "errors": state.get("errors", []) + [f"AutoFormalizer failed: {str(e)}"]
@@ -474,6 +498,16 @@ def sql_generator_node(state: VeriSQLState) -> Dict[str, Any]:
                 "execution_feedback": execution_feedback,
             }
         )
+        llm_usage = merge_usage_summaries(
+            state.get("llm_usage"),
+            make_usage_event(
+                result,
+                stage="sql_generator",
+                model=SQL_MODEL,
+                provider=LLM_PROVIDER,
+                extra={"repair_iteration": state.get("repair_count", 0)},
+            ),
+        )
 
         # Extract SQL from response using Regex for robustness
         import re
@@ -501,7 +535,7 @@ def sql_generator_node(state: VeriSQLState) -> Dict[str, Any]:
         if sql.lower().startswith("sql"):
             sql = sql[3:].strip()
 
-        return {"sql": sql, "errors": state.get("errors", [])}
+        return {"sql": sql, "llm_usage": llm_usage, "errors": state.get("errors", [])}
     except Exception as e:
         return {
             "errors": state.get("errors", []) + [f"SQL generation failed: {str(e)}"]
@@ -525,6 +559,16 @@ def spec_generator_node(state: VeriSQLState) -> Dict[str, Any]:
                 "schema_info": state.get("schema_info", {}),
             }
         )
+        llm_usage = merge_usage_summaries(
+            state.get("llm_usage"),
+            make_usage_event(
+                response,
+                stage="spec_generator",
+                model=SPEC_MODEL,
+                provider=LLM_PROVIDER,
+                extra={"repair_iteration": state.get("repair_count", 0)},
+            ),
+        )
 
         spec_dict = parse_json_from_markdown(response.content)
 
@@ -536,6 +580,7 @@ def spec_generator_node(state: VeriSQLState) -> Dict[str, Any]:
         return {
             "constraint_spec": constraint_spec,
             "ltl_formula": str(ltl_formula),
+            "llm_usage": llm_usage,
             "errors": state.get("errors", []),
         }
     except Exception as e:
@@ -612,9 +657,8 @@ def dynamic_verifier_node(state: VeriSQLState) -> Dict[str, Any]:
         # We preserve the original result object but update it if dynamic fails or adds info
         updated_result = prev_result.model_copy()
 
-        # Save detailed status
-        updated_result.verification_details["Static"] = "PASS"
-        updated_result.verification_details["Dynamic"] = result.status
+        # Preserve static verification details and append the runtime check.
+        updated_result.verification_details["Dynamic Sandbox"] = result.status
 
         if result.status != "PASS":
             # Dynamic check failed! Overwrite global status
@@ -732,11 +776,70 @@ def executor_node(state: VeriSQLState) -> Dict[str, Any]:
     try:
         sql = state.get("sql", "")
         db_path = state.get("db_path")
+        verification_result = state.get("verification_result")
+        is_verified = bool(
+            verification_result and verification_result.status == "PASS"
+        )
 
         if not sql:
             return {
                 "execution_status": "failed",
                 "errors": state.get("errors", []) + ["No SQL to execute"],
+            }
+
+        if verification_result and verification_result.status != "PASS":
+            message = (
+                "Execution blocked because the SQL did not pass verification "
+                f"({verification_result.status})."
+            )
+            return {
+                "final_sql": sql,
+                "execution_status": "failed",
+                "final_result": {
+                    "sql": sql,
+                    "verified": False,
+                    "error": message,
+                },
+                "errors": state.get("errors", []) + [message],
+            }
+
+        is_safe, safety_error = validate_read_only_sql(sql)
+        if not is_safe:
+            return {
+                "final_sql": sql,
+                "execution_status": "failed",
+                "final_result": {
+                    "sql": sql,
+                    "verified": False,
+                    "error": safety_error,
+                },
+                "errors": state.get("errors", []) + [safety_error],
+            }
+
+        if not db_path:
+            if is_verified:
+                return {
+                    "final_sql": sql,
+                    "execution_status": "verified",
+                    "final_result": {
+                        "sql": sql,
+                        "verified": True,
+                        "repair_iterations": state.get("repair_count", 0),
+                        "note": "No db_path provided - SQL verified but not executed",
+                    },
+                    "errors": state.get("errors", []),
+                }
+
+            message = "No db_path provided and SQL is not verified for execution"
+            return {
+                "final_sql": sql,
+                "execution_status": "failed",
+                "final_result": {
+                    "sql": sql,
+                    "verified": False,
+                    "error": message,
+                },
+                "errors": state.get("errors", []) + [message],
             }
 
         # If we have a real database, execute against it
@@ -775,7 +878,7 @@ def executor_node(state: VeriSQLState) -> Dict[str, Any]:
                     "execution_status": "executed",
                     "final_result": {
                         "sql": sql,
-                        "verified": True,
+                        "verified": is_verified,
                         "repair_iterations": state.get("repair_count", 0),
                         "columns": columns,
                         "row_count": len(rows),
@@ -796,7 +899,7 @@ def executor_node(state: VeriSQLState) -> Dict[str, Any]:
                     "execution_status": "failed",
                     "final_result": {
                         "sql": sql,
-                        "verified": True,
+                        "verified": is_verified,
                         "error": str(db_err),
                     },
                     "errors": state.get("errors", [])

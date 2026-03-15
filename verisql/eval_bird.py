@@ -1,11 +1,9 @@
 import argparse
 import csv
 import json
-import os
 import sqlite3
 import sys
 from collections import Counter
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -20,13 +18,24 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from verisql.main import run_verisql
-from verisql.utils.z3_utils import verify_sql_against_spec
 from verisql.agents.nodes import create_llm
-from verisql.config import SQL_MODEL
+from verisql.config import LLM_PROVIDER, SPEC_MODEL, SQL_MODEL
 from verisql.artifacts import resolve_output_path, to_repo_relative
+from verisql.run_metadata import (
+    append_run_index,
+    build_run_name,
+    create_run_metadata,
+    finalize_run_metadata,
+)
+from verisql.utils.llm_usage import (
+    empty_usage_summary,
+    make_usage_event,
+    merge_usage_summaries,
+)
+from verisql.utils.sql_safety import validate_read_only_sql
 
 
-def run_raw_llm(query: str, schema_info: dict) -> str:
+def run_raw_llm(query: str, schema_info: dict) -> Tuple[str, Dict[str, Any]]:
     """Run a zero-shot raw LLM baseline without VeriSQL's verification and repair."""
     llm = create_llm(SQL_MODEL)
 
@@ -50,7 +59,16 @@ Return ONLY the raw SQL query. Do NOT wrap it in markdown code blocks like ```sq
 
     response = llm.invoke(prompt)
     sql = response.content.replace("```sql", "").replace("```", "").strip()
-    return sql
+    llm_usage = merge_usage_summaries(
+        empty_usage_summary(),
+        make_usage_event(
+            response,
+            stage="raw_llm",
+            model=SQL_MODEL,
+            provider=LLM_PROVIDER,
+        ),
+    )
+    return sql, llm_usage
 
 
 def load_json(path: Path) -> list:
@@ -105,6 +123,10 @@ def load_bird_descriptions(schema_info: Dict[str, Any], db_dir: Path) -> None:
 
 
 def execute_sql(db_path: Path, sql: str) -> Tuple[bool, str, List[Tuple[Any, ...]]]:
+    is_safe, safety_error = validate_read_only_sql(sql)
+    if not is_safe:
+        return False, safety_error, []
+
     try:
         conn = sqlite3.connect(str(db_path))
         cursor = conn.cursor()
@@ -154,6 +176,7 @@ def run_single(
             "verified": None,
             "repair_iterations": 0,
             "ltl_formula": None,
+            "llm_usage": empty_usage_summary(),
             "errors": [],
             "execution_status": "skipped",
         }
@@ -163,12 +186,13 @@ def run_single(
 
         # Zero-shot raw LLM baseline
         try:
-            pred_sql = run_raw_llm(query_with_hint, schema_info)
+            pred_sql, llm_usage = run_raw_llm(query_with_hint, schema_info)
             verisql_out = {
                 "sql": pred_sql,
                 "verified": None,
                 "repair_iterations": 0,
                 "ltl_formula": None,
+                "llm_usage": llm_usage,
                 "errors": [],
                 "execution_status": "raw_llm",
             }
@@ -178,6 +202,7 @@ def run_single(
                 "sql": "",
                 "verified": False,
                 "repair_iterations": 0,
+                "llm_usage": empty_usage_summary(),
                 "errors": [str(e)],
                 "execution_status": "failed",
             }
@@ -237,7 +262,13 @@ def safely_run_single(item, db_path, schema_info, pred_source, ablation_mode="no
 
 
 async def eval_concurrently(
-    data, db_root, pred_source, concurrency, checkpoint_mgr, ablation_mode="none"
+    data,
+    db_root,
+    pred_source,
+    concurrency,
+    checkpoint_mgr,
+    run_metadata,
+    ablation_mode="none",
 ):
     sem = asyncio.Semaphore(concurrency)
 
@@ -270,6 +301,8 @@ async def eval_concurrently(
                     ablation_mode,
                 )
 
+            res["run_id"] = run_metadata["run_id"]
+            res["run_name"] = run_metadata["run_name"]
             checkpoint_mgr.append_result(res)
             return res
 
@@ -312,8 +345,14 @@ def main():
     parser.add_argument(
         "--output",
         type=str,
-        default="bird_results.jsonl",
-        help="Output file name. Relative paths are stored under paper_data/runs/",
+        default=None,
+        help="Optional output file name. If omitted, a stable run name is generated under paper_data/runs/",
+    )
+    parser.add_argument(
+        "--run-name",
+        type=str,
+        default=None,
+        help="Optional stable run name used for the output stem and run index.",
     )
     parser.add_argument(
         "--concurrency", type=int, default=5, help="Number of concurrent validations"
@@ -340,7 +379,36 @@ def main():
     if args.offset:
         data = data[args.offset :]
     data = data[: args.limit]
-    output_path = resolve_output_path(args.output, "runs", "bird_results.jsonl")
+    run_name = args.run_name or (
+        Path(args.output).stem
+        if args.output
+        else build_run_name(
+            study="bird",
+            pred_source=args.pred_source,
+            ablation_mode=args.ablation,
+            data_path=data_path,
+            db_id=args.db_id,
+            limit=args.limit,
+            offset=args.offset,
+        )
+    )
+    output_name = args.output or f"{run_name}.jsonl"
+    output_path = resolve_output_path(output_name, "runs", f"{run_name}.jsonl")
+    summary_path = output_path.with_name(f"{output_path.stem}_summary.json")
+    run_metadata = create_run_metadata(
+        study="bird",
+        run_name=run_name,
+        output_path=output_path,
+        summary_path=summary_path,
+        input_path=data_path,
+        pred_source=args.pred_source,
+        ablation_mode=args.ablation,
+        db_id=args.db_id,
+        limit=args.limit,
+        offset=args.offset,
+        concurrency=args.concurrency,
+        total_candidates=len(data),
+    )
 
     # 1. Checkpointing Logic
     checkpoint_mgr = CheckpointManager(str(output_path))
@@ -360,6 +428,7 @@ def main():
                 args.pred_source,
                 args.concurrency,
                 checkpoint_mgr,
+                run_metadata,
                 args.ablation,
             )
         )
@@ -375,18 +444,34 @@ def main():
                     continue
 
     metrics = MetricsCalculator.compute(all_results)
+    metrics["run_id"] = run_metadata["run_id"]
+    metrics["run_name"] = run_metadata["run_name"]
+    metrics["provider"] = run_metadata["provider"]
+    metrics["sql_model"] = run_metadata["sql_model"]
+    metrics["spec_model"] = run_metadata["spec_model"]
+    metrics["ablation_mode"] = args.ablation
     metrics["pred_source"] = args.pred_source
     metrics["data"] = str(data_path)
     metrics["output"] = to_repo_relative(output_path)
 
     # 4. Dump Summary
-    summary_path = output_path.with_name(f"{output_path.stem}_summary.json")
+    finalized_metadata = finalize_run_metadata(
+        run_metadata, completed_questions=len(all_results), metrics=metrics
+    )
 
     with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump({"metrics": metrics}, f, ensure_ascii=False, indent=2)
+        json.dump(
+            {"run": finalized_metadata, "metrics": metrics},
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    append_run_index(finalized_metadata)
 
     print("\nEvaluation Complete:")
     print(json.dumps(metrics, indent=2, ensure_ascii=False))
+    print(f"Run ID: {run_metadata['run_id']}")
     print(f"Run file: {to_repo_relative(output_path)}")
     print(f"Summary: {to_repo_relative(summary_path)}")
 

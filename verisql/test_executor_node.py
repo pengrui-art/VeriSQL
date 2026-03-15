@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 from verisql.agents.nodes import executor_node
+from verisql.agents.state import VerificationResult
 
 
 class TestExecutorNode(unittest.TestCase):
@@ -48,6 +49,27 @@ class TestExecutorNode(unittest.TestCase):
         self.assertLessEqual(len(res_mem["final_result"]["rows"]), 100)
         # Verify the row_count reports up to the fetchmany limit (1001) preventing OOM
         self.assertEqual(res_mem["final_result"]["row_count"], 1001)
+
+    def test_executor_blocks_unverified_sql(self):
+        state = {
+            "sql": "SELECT * FROM sample",
+            "db_path": self.db_path,
+            "verification_result": VerificationResult(
+                status="FAIL", message="verification failed"
+            ),
+            "errors": [],
+        }
+        res = executor_node(state)
+        self.assertEqual(res["execution_status"], "failed")
+        self.assertFalse(res["final_result"]["verified"])
+        self.assertIn("blocked", res["final_result"]["error"].lower())
+
+    def test_executor_blocks_mutating_sql(self):
+        state = {"sql": "DELETE FROM sample", "db_path": self.db_path, "errors": []}
+        res = executor_node(state)
+        self.assertEqual(res["execution_status"], "failed")
+        self.assertFalse(res["final_result"]["verified"])
+        self.assertIn("read-only", res["final_result"]["error"].lower())
 
 
 if __name__ == "__main__":

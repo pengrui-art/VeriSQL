@@ -6,7 +6,7 @@ including structured repair models (PatchAction, FaultLocalization)
 for counterexample-guided SQL repair.
 """
 
-from typing import TypedDict, Optional, List, Literal, Dict
+from typing import TypedDict, Optional, List, Literal, Dict, Any
 from pydantic import BaseModel, Field
 from enum import Enum
 
@@ -158,6 +158,7 @@ class VeriSQLState(TypedDict):
 
     # Metadata
     errors: List[str]
+    llm_usage: Dict[str, Any]
 
     # Ablation Study Configurations (C2.2)
     ablation_mode: Optional[str]  # "none", "no_dynamic", "no_repair"

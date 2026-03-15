@@ -10,9 +10,10 @@ import os
 import sqlite3
 import subprocess
 from pathlib import Path
+from verisql.utils.sql_safety import validate_read_only_sql
 
 # Setup paths
-BASE_DIR = Path(r"e:\GithubReprosity\ASE2026")
+BASE_DIR = Path(__file__).resolve().parents[1]
 JSON_PATH = BASE_DIR / "verisql/DataBase/Bird/dev_20240627/dev_tied_append.json"
 DB_PATH = BASE_DIR / "verisql/DataBase/Bird/dev_20240627/dev_databases/california_schools/california_schools.sqlite"
 
@@ -29,6 +30,10 @@ def get_california_questions(limit=5):
     return questions
 
 def execute_sql(db_path, sql):
+    is_safe, safety_error = validate_read_only_sql(sql)
+    if not is_safe:
+        return {"success": False, "error": safety_error}
+
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
@@ -45,7 +50,7 @@ def run_agent_cli(question_id):
     """Run cli.py for a specific question ID and return the JSON output"""
     cmd = [
         sys.executable, 
-        str(BASE_DIR / "verisql/cli.py"),
+        "-m", "verisql.cli",
         "--question-id", str(question_id),
         "--dev-json", str(JSON_PATH),
         "--json",

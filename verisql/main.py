@@ -11,6 +11,7 @@ from typing import Optional
 
 from verisql.agents.graph import verisql_app
 from verisql.agents.state import VeriSQLState
+from verisql.utils.llm_usage import empty_usage_summary
 
 
 def run_verisql(
@@ -50,6 +51,7 @@ def run_verisql(
         "final_result": None,
         "execution_status": "pending",
         "errors": [],
+        "llm_usage": empty_usage_summary(),
         "ablation_mode": ablation_mode,
         "fault_localizations": [],
         "patch_actions": [],
@@ -102,6 +104,30 @@ def run_verisql(
             ),
             "repair_iterations": final_state.get("repair_count", 0),
             "ltl_formula": final_state.get("ltl_formula"),
+            "verification_status": (
+                final_state.get("verification_result").status
+                if final_state.get("verification_result")
+                else None
+            ),
+            "verification_details": (
+                final_state.get("verification_result").verification_details
+                if final_state.get("verification_result")
+                else {}
+            ),
+            "repair_history": [
+                repair.model_dump(mode="json")
+                for repair in final_state.get("repair_history", [])
+            ],
+            "fault_localizations": [
+                fault.model_dump(mode="json")
+                for fault in final_state.get("fault_localizations", [])
+            ],
+            "patch_actions": [
+                action.model_dump(mode="json")
+                for action in final_state.get("patch_actions", [])
+            ],
+            "llm_usage": final_state.get("llm_usage", empty_usage_summary()),
+            "ablation_mode": ablation_mode,
             "errors": final_state.get("errors", []),
             "execution_status": final_state.get("execution_status", "unknown"),
         }
@@ -113,6 +139,11 @@ def run_verisql(
             "query": query,
             "sql": None,
             "verified": False,
+            "repair_history": [],
+            "fault_localizations": [],
+            "patch_actions": [],
+            "llm_usage": empty_usage_summary(),
+            "ablation_mode": ablation_mode,
             "errors": [str(e)],
             "execution_status": "failed",
         }

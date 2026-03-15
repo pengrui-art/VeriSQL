@@ -1,25 +1,26 @@
-import os
-import json
 import unittest
-import tempfile
+import shutil
 from pathlib import Path
 from verisql.eval_utils import CheckpointManager, MetricsCalculator
 
 class TestEvalScripts(unittest.TestCase):
     def test_checkpoint_manager(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            jsonl_path = Path(tmp_dir) / 'test_results.jsonl'
+        tmp_root = Path(__file__).resolve().parents[1] / "paper_data" / "tmp_tests"
+        test_dir = tmp_root / "checkpoint_manager"
+        jsonl_path = test_dir / 'test_results.jsonl'
+        try:
+            shutil.rmtree(test_dir, ignore_errors=True)
             manager = CheckpointManager(str(jsonl_path))
-            
+
             # initially empty
             completed = manager.load_completed()
             self.assertEqual(len(completed), 0)
-            
+
             # write some records
             manager.append_result({'question_id': 1, 'ex': 1})
             manager.append_result({'question_id': 2, 'ex': 0})
             manager.append_result({'error': 'some runtime error'}) # record without question_id
-            
+
             # reload
             manager2 = CheckpointManager(str(jsonl_path))
             completed2 = manager2.load_completed()
@@ -27,6 +28,8 @@ class TestEvalScripts(unittest.TestCase):
             self.assertIn(1, completed2)
             self.assertIn(2, completed2)
             self.assertNotIn(3, completed2)
+        finally:
+            shutil.rmtree(tmp_root, ignore_errors=True)
 
     def test_metrics_calculator(self):
         mock_results = [

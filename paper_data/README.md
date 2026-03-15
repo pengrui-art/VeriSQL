@@ -7,15 +7,24 @@ second-stage paper writing process.
 
 - `paper_data/runs/`: raw evaluation outputs (`.jsonl`) and auto-generated summaries.
 - `paper_data/reports/`: analysis reports derived from run files.
+- `paper_data/run_index.jsonl`: master experiment index with run metadata,
+  dataset slice, git revision, and output paths.
 - `paper_data/`: legacy result files that were generated before the workspace was
   standardized. Keep them for reference, but place new outputs under `runs/` and
   `reports/`.
 
 ## Naming Rule
 
-- Evaluation runs: `<study_name>.jsonl`
+- Evaluation runs: `<run_name>.jsonl`
 - Run summary: `<study_name>_summary.json`
 - Analysis report: `<study_name>_report.md`
+
+Stable run names now follow the pattern:
+
+- `bird_<pred_source>_<provider>_sql-<sql_model>[_spec-<spec_model>_abl-<mode>]_<slice>_<timestamp>`
+- `simple_regression_<pred_source>_<provider>_sql-<sql_model>[_spec-<spec_model>_abl-<mode>]_<slice>_<timestamp>`
+
+If you pass `--output foo.jsonl`, the run name becomes `foo`.
 
 Examples:
 
@@ -37,6 +46,7 @@ Examples:
   - `result_norepair_qwen_summary.json`
 - Analysis reports already present:
   - `failure_report.md`
+  - `repair_quality_report.md` (new runs)
 
 ## Recommended Commands
 
@@ -47,4 +57,14 @@ conda activate verisql
 python -m verisql.eval_bird --pred-source agent --output result_verisql_qwen.jsonl
 python -m verisql.analyze_failures --input result_verisql_qwen.jsonl --output failure_report.md
 python -m verisql.find_destructive_repairs --agent result_verisql_qwen.jsonl --no-repair result_norepair_qwen.jsonl --output destructive_repairs_report.md
+python -m verisql.analyze_repair_quality --agent result_verisql_qwen.jsonl --no-repair result_norepair_qwen.jsonl --output repair_quality_report.md
+python -m verisql.eval_simple --pred-source gold --output simple_regression_gold.jsonl
 ```
+
+## Notes
+
+- `*_summary.json` now contains both `run` metadata and `metrics`.
+- Token and estimated API cost totals are logged when the LLM provider returns
+  token usage metadata.
+- If you need paper-grade cost accounting, set `MODEL_PRICING_JSON` before running
+  evaluations so the estimator uses your explicit per-model prices.

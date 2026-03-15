@@ -246,11 +246,15 @@ python verisql/eval_bird.py --dev path/to/dev.json --db-root path/to/dev_databas
 ## 🚀 Quick Start
 
 ```bash
-# (Recommended) from repo root
-pip install -e .
+# Reproducible environment from repo root
+conda env create -f environment.yml
+conda activate verisql
 
 # Or: deps-only
 pip install -r verisql/requirements.txt
+
+# Optional test runner
+pytest verisql
 ```
 
 ### Environment Variables
@@ -286,10 +290,18 @@ python -m verisql.app
 ### Run (BIRD Evaluation)
 
 ```bash
-python verisql/eval_bird.py \
-  --dev verisql/DataBase/Bird/dev_20240627/dev.json \
-  --db-root verisql/DataBase/Bird/dev_20240627/dev_databases/
+python -m verisql.eval_bird --pred-source agent --output result_verisql_qwen.jsonl
+python -m verisql.analyze_repair_quality --agent result_verisql_qwen.jsonl --no-repair result_norepair_qwen.jsonl --output repair_quality_report.md
+python -m verisql.eval_simple --pred-source gold --output simple_regression_gold.jsonl
 ```
+
+`eval_bird.py` and `eval_simple.py` now emit:
+
+- run metadata in each `*_summary.json`
+- token / estimated cost totals when provider usage metadata is available
+- a master run index at `paper_data/run_index.jsonl`
+
+If you need paper-grade pricing, set `MODEL_PRICING_JSON` before running evaluations.
 
 ## 📦 Dependencies
 

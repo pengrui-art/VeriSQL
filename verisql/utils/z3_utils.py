@@ -31,6 +31,7 @@ from verisql.core.dsl import (
 )
 from verisql.agents.state import VerificationResult
 from verisql.config import Z3_TIMEOUT_MS
+from verisql.utils.sql_safety import validate_read_only_sql
 
 
 class SQLConstraintExtractor:
@@ -451,56 +452,39 @@ class SymbolicVerifier:
 def verify_sql_against_spec(
     sql: str, spec: ConstraintSpec, schema_info: Optional[Dict[str, Any]] = None
 ) -> VerificationResult:
-    """Convenience function for verification including optionally schema validation"""
+    """Run safety checks, schema validation, and symbolic verification."""
+    details: Dict[str, str] = {}
+
+    is_read_only, safety_error = validate_read_only_sql(sql)
+    if not is_read_only:
+        details["Safety Validation"] = "FAIL"
+        return VerificationResult(
+            status="FAIL",
+            message="SQL failed safety validation",
+            missing_constraints=[safety_error],
+            verification_details=details,
+        )
+
+    details["Safety Validation"] = "PASS"
 
     # 1. Optional Schema Validation (Static)
     if schema_info:
         validator = SchemaValidator(schema_info)
         schema_errors = validator.validate(sql)
         if schema_errors:
+            details["Schema Validation"] = "FAIL"
             return VerificationResult(
                 status="FAIL",
                 message="SQL failed schema validation",
                 missing_constraints=schema_errors,
+                verification_details=details,
             )
+        details["Schema Validation"] = "PASS"
 
     # 2. Constraint Verification (Static Z3)
     verifier = SymbolicVerifier()
-    # Also reuse the text-based extraction as a "Linter" for missing fields if Z3 ignores them?
-    # For now, rely on Z3.
     static_result = verifier.verify(sql, spec)
 
-    # Init details
-    details = {"Static Analysis (Z3)": static_result.status}
-
-    if static_result.status != "PASS":
-        static_result.verification_details = details
-        return static_result
-
-    # 3. Dynamic Verification (Targeted Sandbox Testing)
-    if schema_info:
-        try:
-            from verisql.modules.dynamic_verifier import DynamicVerifier
-
-            dyn_verifier = DynamicVerifier(schema_info)
-            dyn_result = dyn_verifier.verify(sql, spec)
-
-            details["Dynamic Sandbox"] = dyn_result.status
-
-            if dyn_result.status != "PASS":
-                dyn_result.message = f"[Static: PASS] [Dynamic: {dyn_result.status}] {dyn_result.message}"
-                dyn_result.verification_details = details
-                return dyn_result
-
-            # Both passed
-            static_result.verification_details = details
-            return static_result
-
-        except ImportError:
-            pass
-        except Exception as e:
-            # print(f"Dynamic Verification Warning: {e}")
-            details["Dynamic Sandbox"] = f"SKIPPED ({str(e)})"
-
+    details["Static Analysis (Z3)"] = static_result.status
     static_result.verification_details = details
     return static_result

@@ -17,6 +17,7 @@ env/
 # IDEs
 .idea/
 .vscode/
+.worktree-master/
 
 # Secrets and keys
 *.pem
@@ -27,3 +28,5 @@ env/
 
 # Local databases and artifacts
 *.sqlite
+.tmp_tests/
+paper_data/tmp_tests/

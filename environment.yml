@@ -1,0 +1,12 @@
+name: verisql
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  # Tested stack in the current `verisql` env:
+  # langgraph 1.0.6, langchain 1.2.6, langchain-openai 1.1.7,
+  # sqlglot 28.6.0, z3-solver 4.15.4.0, gradio 6.3.0,
+  # pandas 2.3.3, numpy 2.4.1, openai 2.15.0.
+  - pip:
+      - -r verisql/requirements.txt

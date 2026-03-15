@@ -25,54 +25,54 @@ is the canonical execution checklist going forward.
 
 ### 2.1 Core architecture
 
-- [x] LangGraph workflow with parsing, formalization, SQL generation, verification,
-      repair, and execution.
-- [x] ILR schema, DSL schema, and deterministic LTL compilation.
-- [x] Z3-based symbolic verification.
-- [x] Dynamic sandbox verification with adversarial micro-database synthesis.
-- [x] Structured repair pipeline based on `FaultLocalizer` and `PatchAction`.
-- [x] CLI and Gradio app entry points.
+- [X] LangGraph workflow with parsing, formalization, SQL generation, verification,
+  repair, and execution.
+- [X] ILR schema, DSL schema, and deterministic LTL compilation.
+- [X] Z3-based symbolic verification.
+- [X] Dynamic sandbox verification with adversarial micro-database synthesis.
+- [X] Structured repair pipeline based on `FaultLocalizer` and `PatchAction`.
+- [X] CLI and Gradio app entry points.
 
 ### 2.2 Evaluation infrastructure
 
-- [x] BIRD evaluation runner with SQLite schema loading.
-- [x] Async batch execution and JSONL checkpointing.
-- [x] Core metrics aggregation: EX / SVR / CAA / latency.
-- [x] Gold-mode smoke evaluation path.
-- [x] Baseline and ablation run support in `eval_bird.py`.
+- [X] BIRD evaluation runner with SQLite schema loading.
+- [X] Async batch execution and JSONL checkpointing.
+- [X] Core metrics aggregation: EX / SVR / CAA / latency.
+- [X] Gold-mode smoke evaluation path.
+- [X] Baseline and ablation run support in `eval_bird.py`.
 
 ### 2.3 Analysis assets
 
-- [x] Failure taxonomy script.
-- [x] Destructive repair comparison script.
-- [x] Historical result files for baseline / full VeriSQL / ablations.
-- [x] Preliminary failure report and repair impact report.
+- [X] Failure taxonomy script.
+- [X] Destructive repair comparison script.
+- [X] Historical result files for baseline / full VeriSQL / ablations.
+- [X] Preliminary failure report and repair impact report.
 
 ### 2.4 Existing tests
 
-- [x] `test_fault_localizer.py`
-- [x] `test_z3_core.py`
-- [x] `test_dynamic_verifier.py`
-- [x] `test_executor_node.py`
-- [x] `test_eval_scripts.py`
-- [x] `test_extreme_robustness.py`
-- [x] `test_agent_robustness.py` as an E2E-style script
-- [x] `test_spec_utils.py` as a manual script
+- [X] `test_fault_localizer.py`
+- [X] `test_z3_core.py`
+- [X] `test_dynamic_verifier.py`
+- [X] `test_executor_node.py`
+- [X] `test_eval_scripts.py`
+- [X] `test_extreme_robustness.py`
+- [X] `test_agent_robustness.py` as an E2E-style script
+- [X] `test_spec_utils.py` as a manual script
 
 ## 3. Code Work Still Needed
 
 ### 3.1 P0: Must finish before the main paper experiments
 
-- [ ] Fix the verification/execution contract.
+- [x] Fix the verification/execution contract.
   - Do not label failed execution as `verified=True`.
   - Do not execute non-read-only SQL in the benchmark path.
   - Decide whether failed verification should stop execution or be logged as
     unverified execution explicitly.
-- [ ] Remove or refactor duplicated dynamic verification.
-  - `verify_sql_against_spec()` already includes dynamic verification.
-  - The graph currently also runs `dynamic_verifier_node`.
-  - This must be clarified before reporting latency or ablation numbers.
-- [ ] Replace all absolute local paths with repo-relative or configurable paths.
+- [x] Remove or refactor duplicated dynamic verification.
+  - `verify_sql_against_spec()` is now static-only.
+  - runtime falsification stays in `dynamic_verifier_node`.
+  - latency and ablation semantics are no longer double-counting dynamic checks.
+- [x] Replace all absolute local paths with repo-relative or configurable paths.
   - `cli.py`
   - `test_agent_robustness.py`
   - any remaining local-only defaults
@@ -80,7 +80,7 @@ is the canonical execution checklist going forward.
   - the old root-level helper scripts have been removed
   - keep the canonical workflow under `python -m verisql.*`
   - add a reproducible wrapper only after the pipeline semantics are stable
-- [ ] Add a reproducible environment spec.
+- [x] Add a reproducible environment spec.
   - `environment.yml` or equivalent
   - make sure `pytest` is included
   - record Python version and critical package versions
@@ -89,23 +89,23 @@ is the canonical execution checklist going forward.
 
 ### 3.2 P1: Needed for strong experiments and review defense
 
-- [ ] Add run metadata logging for every experiment.
+- [x] Add run metadata logging for every experiment.
   - provider
   - model names
   - ablation mode
   - dataset slice
   - timestamp
   - git revision if available
-- [ ] Add token and API cost logging.
-- [ ] Add stable run naming rules and a master run index under `paper_data/`.
-- [ ] Quantify repair quality.
+- [x] Add token and API cost logging.
+- [x] Add stable run naming rules and a master run index under `paper_data/`.
+- [x] Quantify repair quality.
   - destructive repairs
   - beneficial repairs
   - patch action frequency
   - per-action success rate
-- [ ] Add simple-query non-regression evaluation.
+- [x] Add simple-query non-regression evaluation.
   - Spider sample or another easier subset
-- [ ] Improve packaging and reproducibility docs.
+- [x] Improve packaging and reproducibility docs.
   - one-command evaluation instructions
   - artifact generation instructions
   - paper figure/table source mapping
@@ -119,19 +119,19 @@ is the canonical execution checklist going forward.
 
 ## 4. Experiment Artifact Rules
 
-- [x] Canonical artifact root is `paper_data/`.
-- [x] New evaluation runs should go to `paper_data/runs/`.
-- [x] New analysis reports should go to `paper_data/reports/`.
+- [X] Canonical artifact root is `paper_data/`.
+- [X] New evaluation runs should go to `paper_data/runs/`.
+- [X] New analysis reports should go to `paper_data/reports/`.
 - [ ] Add a machine-readable run manifest when the next round of experiments starts.
 
 ## 5. Next Execution Checklist
 
 ### Step A: stabilize the code path
 
-- [ ] fix duplicated dynamic verification
-- [ ] fix verification/execution semantics
-- [ ] fix path hardcoding
-- [ ] clean environment spec
+- [x] fix duplicated dynamic verification
+- [x] fix verification/execution semantics
+- [x] fix path hardcoding
+- [x] clean environment spec
 
 ### Step B: rerun the canonical experiments
 
@@ -140,6 +140,8 @@ is the canonical execution checklist going forward.
 - [ ] no-dynamic ablation
 - [ ] no-repair ablation
 - [ ] repair-impact comparison
+- [ ] repair-quality report
+- [ ] simple-regression run
 - [ ] failure taxonomy report
 
 ### Step C: prepare paper-ready evidence
@@ -159,4 +161,6 @@ python -m verisql.eval_bird --pred-source agent --ablation no_dynamic --output r
 python -m verisql.eval_bird --pred-source agent --ablation no_repair --output result_norepair_qwen.jsonl
 python -m verisql.analyze_failures --input result_verisql_qwen.jsonl --output failure_report.md
 python -m verisql.find_destructive_repairs --agent result_verisql_qwen.jsonl --no-repair result_norepair_qwen.jsonl --output destructive_repairs_report.md
+python -m verisql.analyze_repair_quality --agent result_verisql_qwen.jsonl --no-repair result_norepair_qwen.jsonl --output repair_quality_report.md
+python -m verisql.eval_simple --pred-source gold --output simple_regression_gold.jsonl
 ```

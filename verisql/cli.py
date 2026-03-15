@@ -28,6 +28,7 @@ from verisql.config import SQL_MODEL, SPEC_MODEL, LLM_PROVIDER, get_llm_config
 from verisql.core.dsl import ConstraintSpec
 from verisql.utils.z3_utils import verify_sql_against_spec
 from verisql.utils.spec_utils import parse_spec_safely
+from verisql.utils.sql_safety import validate_read_only_sql
 import re
 
 
@@ -60,9 +61,27 @@ def parse_json_from_markdown(text: str) -> Dict[str, Any]:
 
 
 # ============== Default Paths ==============
-DEFAULT_DB_PATH = r"E:\GithubReprosity\ASE2026\verisql\DataBase\Bird\dev_20240627\dev_databases\california_schools\california_schools.sqlite"
-DEFAULT_DESCRIPTION_DIR = r"E:\GithubReprosity\ASE2026\verisql\DataBase\Bird\dev_20240627\dev_databases\california_schools\database_description"
-DEFAULT_DEV_JSON = r"E:\GithubReprosity\ASE2026\verisql\DataBase\Bird\dev_20240627\dev.json"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+BIRD_DEV_ROOT = REPO_ROOT / "verisql" / "DataBase" / "Bird" / "dev_20240627"
+DEFAULT_BIRD_DB_ID = "california_schools"
+DEFAULT_DB_PATH = (
+    BIRD_DEV_ROOT
+    / "dev_databases"
+    / DEFAULT_BIRD_DB_ID
+    / f"{DEFAULT_BIRD_DB_ID}.sqlite"
+)
+DEFAULT_DEV_JSON = BIRD_DEV_ROOT / "dev.json"
+
+
+def infer_db_path_from_dev_json(dev_json_path: Path, db_id: Optional[str]) -> Path:
+    if db_id:
+        return dev_json_path.parent / "dev_databases" / db_id / f"{db_id}.sqlite"
+    return DEFAULT_DB_PATH
+
+
+def _quote_sqlite_ident(name: str) -> str:
+    escaped = name.replace('"', '""')
+    return f'"{escaped}"'
 
 
 # ============== Database Utils ==============
@@ -99,7 +118,7 @@ class CLIDatabaseManager:
                 if table_name.startswith('sqlite_'):
                     continue
                     
-                cursor.execute(f"PRAGMA table_info({table_name})")
+                cursor.execute(f"PRAGMA table_info({_quote_sqlite_ident(table_name)})")
                 columns = cursor.fetchall()
                 
                 col_info = []
@@ -149,18 +168,18 @@ class CLIDatabaseManager:
         """Execute SQL and return results"""
         if not self.conn:
             return False, "No database loaded", {}
+
+        is_safe, safety_error = validate_read_only_sql(sql)
+        if not is_safe:
+            return False, safety_error, {}
         
         try:
             cursor = self.conn.cursor()
             cursor.execute(sql)
             
-            if sql.strip().upper().startswith("SELECT"):
-                columns = [desc[0] for desc in cursor.description]
-                rows = cursor.fetchall()
-                return True, "Query executed successfully", {"columns": columns, "rows": rows}
-            else:
-                self.conn.commit()
-                return True, f"Affected rows: {cursor.rowcount}", {}
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            return True, "Query executed successfully", {"columns": columns, "rows": rows}
                 
         except Exception as e:
             return False, f"SQL Error: {str(e)}", {}
@@ -466,8 +485,8 @@ Examples:
     parser.add_argument(
         "--db", "--database",
         type=str,
-        default=DEFAULT_DB_PATH,
-        help=f"Path to SQLite database (default: california_schools)"
+        default=None,
+        help="Path to SQLite database. If omitted, it is inferred from --question-id/--db-id when possible."
     )
     parser.add_argument(
         "--description-dir",
@@ -493,14 +512,14 @@ Examples:
     parser.add_argument(
         "--dev-json",
         type=str,
-        default=DEFAULT_DEV_JSON,
+        default=str(DEFAULT_DEV_JSON),
         help="Path to BIRD dev.json file"
     )
     parser.add_argument(
         "--db-id",
         type=str,
-        default="california_schools",
-        help="Database ID filter for dev.json questions"
+        default=None,
+        help="Optional database ID filter for dev.json questions"
     )
     
     # Output options
@@ -541,27 +560,11 @@ Examples:
     )
     
     args = parser.parse_args()
-    
-    # Initialize database
-    db_manager = CLIDatabaseManager()
-    success, msg = db_manager.load_database(args.db, args.description_dir)
-    
-    if not success:
-        print(f"[ERROR] {msg}", file=sys.stderr)
-        sys.exit(1)
-    
-    if not args.quiet and not args.json:
-        print(f"[INFO] {msg}")
-    
-    # Show schema if requested
-    if args.show_schema:
-        print("\n=== Database Schema ===")
-        print(db_manager.get_schema_text())
-        sys.exit(0)
-    
+    dev_json_path = Path(args.dev_json)
+
     # List questions if requested
     if args.list_questions:
-        questions = load_questions_from_json(args.dev_json, args.db_id)
+        questions = load_questions_from_json(str(dev_json_path), args.db_id)
         print(f"\n=== Available Questions ({len(questions)} total) ===")
         for q in questions[:50]:  # Show first 50
             difficulty = q.get("difficulty", "unknown")
@@ -569,17 +572,37 @@ Examples:
         if len(questions) > 50:
             print(f"... and {len(questions) - 50} more")
         sys.exit(0)
+
+    if args.show_schema and args.query is None and args.question_id is None:
+        resolved_db_path = Path(args.db) if args.db else infer_db_path_from_dev_json(
+            dev_json_path, args.db_id
+        )
+        resolved_description_dir = (
+            Path(args.description_dir) if args.description_dir else None
+        )
+        db_manager = CLIDatabaseManager()
+        success, msg = db_manager.load_database(
+            str(resolved_db_path),
+            str(resolved_description_dir) if resolved_description_dir else None,
+        )
+        if not success:
+            print(f"[ERROR] {msg}", file=sys.stderr)
+            sys.exit(1)
+        print("\n=== Database Schema ===")
+        print(db_manager.get_schema_text())
+        sys.exit(0)
     
     # Determine the query to process
     query = None
     evidence = None
     gold_sql = None
     question_id = None
+    selected_db_id = args.db_id
     
     if args.query:
         query = args.query
     elif args.question_id is not None:
-        questions = load_questions_from_json(args.dev_json, args.db_id)
+        questions = load_questions_from_json(str(dev_json_path), args.db_id)
         q = get_question_by_id(questions, args.question_id)
         if not q:
             print(f"[ERROR] Question ID {args.question_id} not found", file=sys.stderr)
@@ -588,6 +611,7 @@ Examples:
         evidence = q.get("evidence", "")
         gold_sql = q.get("SQL", "")
         question_id = args.question_id
+        selected_db_id = q.get("db_id") or selected_db_id
         
         if not args.quiet and not args.json:
             print(f"\n=== Question {question_id} ===")
@@ -600,6 +624,33 @@ Examples:
         parser.print_help()
         print("\n[ERROR] Please provide --query or --question-id", file=sys.stderr)
         sys.exit(1)
+
+    resolved_db_path = Path(args.db) if args.db else infer_db_path_from_dev_json(
+        dev_json_path, selected_db_id
+    )
+    resolved_description_dir = (
+        Path(args.description_dir) if args.description_dir else None
+    )
+
+    # Initialize database after query/db resolution so question-driven runs can infer the correct DB.
+    db_manager = CLIDatabaseManager()
+    success, msg = db_manager.load_database(
+        str(resolved_db_path),
+        str(resolved_description_dir) if resolved_description_dir else None,
+    )
+
+    if not success:
+        print(f"[ERROR] {msg}", file=sys.stderr)
+        sys.exit(1)
+
+    if not args.quiet and not args.json:
+        print(f"[INFO] {msg}")
+
+    # Show schema if requested
+    if args.show_schema:
+        print("\n=== Database Schema ===")
+        print(db_manager.get_schema_text())
+        sys.exit(0)
     
     # Inject db_path for runtime execution
     db_manager.schema_info["db_path"] = db_manager.db_path

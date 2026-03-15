@@ -1,0 +1,44 @@
+[
+  {
+    "question_id": 1,
+    "db_id": "sample_store",
+    "difficulty": "simple",
+    "question": "List the names of active products.",
+    "SQL": "SELECT name FROM products WHERE is_active = 1"
+  },
+  {
+    "question_id": 2,
+    "db_id": "sample_store",
+    "difficulty": "simple",
+    "question": "How many completed orders were placed in Q3 2024?",
+    "SQL": "SELECT COUNT(*) FROM orders WHERE status = 'completed' AND order_date BETWEEN '2024-07-01' AND '2024-09-30'"
+  },
+  {
+    "question_id": 3,
+    "db_id": "sample_store",
+    "difficulty": "simple",
+    "question": "Which customers are from New York?",
+    "SQL": "SELECT name FROM customers WHERE city = 'New York'"
+  },
+  {
+    "question_id": 4,
+    "db_id": "sample_store",
+    "difficulty": "simple",
+    "question": "What is the total sales amount of completed orders in Q3 2024?",
+    "SQL": "SELECT SUM(total_amount) FROM orders WHERE status = 'completed' AND order_date BETWEEN '2024-07-01' AND '2024-09-30'"
+  },
+  {
+    "question_id": 5,
+    "db_id": "sample_store",
+    "difficulty": "simple",
+    "question": "Show the product names and prices for furniture items.",
+    "SQL": "SELECT name, price FROM products WHERE category = 'Furniture'"
+  },
+  {
+    "question_id": 6,
+    "db_id": "sample_store",
+    "difficulty": "simple",
+    "question": "How many non-test customers do we have?",
+    "SQL": "SELECT COUNT(*) FROM customers WHERE is_test = 0"
+  }
+]
