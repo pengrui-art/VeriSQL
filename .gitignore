@@ -9,6 +9,7 @@ __pycache__/
 
 # Environments
 .env
+.env.*
 .venv/
 venv/
 env/
@@ -16,6 +17,13 @@ env/
 # IDEs
 .idea/
 .vscode/
+
+# Secrets and keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
 
 # Local databases and artifacts
 *.sqlite
